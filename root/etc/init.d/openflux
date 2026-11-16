@@ -1,0 +1,108 @@
+#!/bin/sh /etc/rc.common
+# OpenFlux client service.
+#
+# Starts exactly ONE profile at a time. All profiles are kept in UCI and can be
+# switched from LuCI without editing files. The master switch (main.enabled)
+# stops the service completely - the client binary is not even unpacked.
+
+START=99
+STOP=10
+USE_PROCD=1
+
+_found=''
+_scan_profile() {
+	[ -n "$_found" ] && return 0
+	local u
+	config_get u "$1" url ''
+	[ -n "$u" ] && _found="$1"
+	return 0
+}
+
+resolve_binary() {
+	local bin archive out
+
+	config_get bin main binary '/usr/bin/openflux'
+	config_get archive main archive ''
+
+	if [ -n "$bin" ] && [ -x "$bin" ]; then
+		echo "$bin"
+		return 0
+	fi
+
+	if [ -n "$archive" ] && [ -f "$archive" ]; then
+		out="/tmp/openflux"
+		if [ ! -x "$out" ]; then
+			logger -t openflux "unpacking $archive -> $out"
+			gzip -dc "$archive" > "$out" || {
+				logger -t openflux "failed to unpack $archive"
+				return 1
+			}
+			chmod +x "$out"
+		fi
+		echo "$out"
+		return 0
+	fi
+
+	return 1
+}
+
+start_service() {
+	local enabled active transport url socks key keyfile prog
+
+	config_load openflux
+	config_get_bool enabled main enabled 0
+
+	if [ "$enabled" != "1" ]; then
+		logger -t openflux "service disabled in UCI, not starting"
+		return 0
+	fi
+
+	prog="$(resolve_binary)" || {
+		logger -t openflux "client binary not found (set openflux.main.binary or openflux.main.archive)"
+		return 1
+	}
+
+	config_get active main active ''
+
+	config_get url "$active" url ''
+	if [ -z "$url" ]; then
+		_found=''
+		config_foreach _scan_profile profile
+		active="$_found"
+		config_get url "$active" url ''
+	fi
+
+	if [ -z "$url" ]; then
+		logger -t openflux "no profile with a URL configured"
+		return 1
+	fi
+
+	config_get transport "$active" transport telemost
+	config_get socks "$active" socks '127.0.0.1:1081'
+	config_get key "$active" key ''
+
+	if [ -z "$socks" ]; then
+		logger -t openflux "profile '$active' has no SOCKS address"
+		return 1
+	fi
+
+	keyfile="/tmp/openflux-$active.key"
+	: > "$keyfile"
+	chmod 600 "$keyfile"
+	[ -n "$key" ] && printf '%s' "$key" > "$keyfile"
+
+	logger -t openflux "starting profile '$active' on $socks ($transport) using $prog"
+
+	procd_open_instance "$active"
+	procd_set_param command "$prog" --role=client --inbound=socks5 \
+		--socks5="$socks" --transport="$transport" --url "$url" \
+		--encryption-key-file="$keyfile"
+	procd_set_param respawn 3600 5 5
+	procd_set_param stdout 1
+	procd_set_param stderr 1
+	procd_close_instance
+}
+
+service_triggers() {
+	procd_add_reload_trigger openflux
+}

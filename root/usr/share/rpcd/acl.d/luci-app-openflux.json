@@ -1,0 +1,24 @@
+{
+	"luci-app-openflux": {
+		"description": "OpenFlux client",
+		"read": {
+			"file": {
+				"/etc/config/openflux": [ "read" ]
+			},
+			"uci": [ "openflux" ],
+			"exec": {
+				"/etc/init.d/openflux": [ "status" ],
+				"/sbin/logread": [ "" ]
+			}
+		},
+		"write": {
+			"file": {
+				"/etc/config/openflux": [ "write" ]
+			},
+			"uci": [ "openflux" ],
+			"exec": {
+				"/etc/init.d/openflux": [ "start", "stop", "restart" ]
+			}
+		}
+	}
+}

@@ -1,0 +1,5 @@
+config openflux 'main'
+	option enabled '0'
+	option active ''
+	option binary '/usr/bin/openflux'
+	option archive ''
