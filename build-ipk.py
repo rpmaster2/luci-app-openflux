@@ -132,8 +132,8 @@ def collect_data_files():
     for rel, path in files:
         with open(path, "rb") as fh:
             data = fh.read()
-        if rel == "etc/config/openflux":
-            data = data.replace(b"\r\n", b"\n")
+        # Package payload is all text: keep LF regardless of the host OS.
+        data = data.replace(b"\r\n", b"\n")
         entries.append(("./" + rel, data, file_mode(rel)))
     return entries
 
